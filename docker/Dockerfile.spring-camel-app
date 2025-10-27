@@ -1,0 +1,38 @@
+# ===== build =====
+FROM alpine:3.20 AS build
+RUN apk add --no-cache openjdk21 maven git bash ca-certificates
+ENV JAVA_HOME=/usr/lib/jvm/default-jvm
+WORKDIR /src
+COPY pom.xml ./
+RUN mvn -q -DskipTests dependency:go-offline
+COPY src ./src
+RUN mvn -q -DskipTests package
+
+# ===== run =====
+FROM eclipse-temurin:21-jdk-alpine
+RUN apk add --no-cache su-exec
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+COPY --from=build /src/target/*.jar /app/app.jar
+
+RUN cat > /entrypoint.sh <<'SH' && sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+#!/usr/bin/env sh
+set -eu
+DATA_DIR=${DATA_DIR:-/data}
+SQLITE_DIR=${SQLITE_DIR:-/var/sqlite}
+
+if [ -d "${DATA_DIR}" ] || mkdir -p "${DATA_DIR}"; then
+  mkdir -p "${DATA_DIR}/raw_users" "${DATA_DIR}/processed_users" "${DATA_DIR}/dlq" "${DATA_DIR}/state" || true
+  chown -R app:app "${DATA_DIR}" || true
+fi
+
+if [ -d "${SQLITE_DIR}" ]; then
+  chown -R app:app "${SQLITE_DIR}" || true
+fi
+
+exec su-exec app:app sh -lc "java ${JAVA_OPTS:-} -jar /app/app.jar"
+SH
+
+ENV JAVA_OPTS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75"
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint.sh"]

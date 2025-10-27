@@ -62,3 +62,8 @@
 ### Env Files ###
 *.env
 
+### Keys ###
+*id_rsa
+*id_rsa.pub
+*know_hosts
+

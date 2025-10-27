@@ -7,15 +7,21 @@ management:
 
 logging:
   level:
-    root: DEBUG
-    org.apache.camel: DEBUG
+    root: INFO
+    org.apache.camel: INFO
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:sqlite:/var/sqlite/files.db}
+    url: ${DB_URL}
     driver-class-name: org.sqlite.JDBC
     #username: ${DB_USERNAME:}
     #password: ${DB_PASSWORD:}
   sql:
     init:
       mode: never
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      client-type: lettuce

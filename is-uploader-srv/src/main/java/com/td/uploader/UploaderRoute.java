@@ -47,19 +47,14 @@ public class UploaderRoute extends RouteBuilder {
 		// === Redis (SUBSCRIBE) ===
 		final String redisHost = defaultValue("REDIS_HOST", "redis");
 		final String redisPort = defaultValue("REDIS_PORT", "6379");
-		final String redisPwd  = defaultValue("REDIS_PASSWORD", "");
+		final String redisPwd  = defaultValue("REDIS_PASSWORD", "${REDIS_PASSWORD}");
 		final String chMain    = defaultValue("REDIS_CHANNEL", "files.events");
 		final String chDlq     = defaultValue("REDIS_DLQ_CHANNEL", "files.dlq");
 
-		StringBuilder redisSub = new StringBuilder()
-				.append("spring-redis://").append(redisHost).append(":").append(redisPort)
-				.append("?command=SUBSCRIBE&channels=").append(chMain).append(",").append(chDlq);
-		if (!redisPwd.isBlank()) redisSub.append("&password=").append(redisPwd);
-
 		// === Crypto (AES) ===
 		final String cryptoAlgo = defaultValue("CRYPTO_ALGO", "AES/CBC/PKCS5Padding");
-		final byte[] keyBytes   = hexToBytes("CRYPTO_KEY_HEX");
-		final byte[] ivBytes    = hexToBytes("CRYPTO_IV_HEX");
+		final byte[] keyBytes   = hexToBytes(must("CRYPTO_KEY_HEX"));
+		final byte[] ivBytes    = hexToBytes(must("CRYPTO_IV_HEX"));
 
 		final SecretKeySpec secretKey = new SecretKeySpec(keyBytes, "AES");
 		final CryptoDataFormat crypto = new CryptoDataFormat(cryptoAlgo, secretKey);
@@ -86,7 +81,7 @@ public class UploaderRoute extends RouteBuilder {
 		if (!sftpKnown.isBlank())  sftpUri.append("&knownHostsFile=").append(sftpKnown);
 
 		//Main Function - ProcessFile
-		from(redisSub.toString())
+		from("spring-redis://?command=SUBSCRIBE&channels="+chMain+","+chDlq+"&connectionFactory=#redisConnectionFactory")
 				.routeId("uploader-subscribe")
 				.process(e -> {
 					String json = e.getMessage().getBody(String.class);
@@ -194,10 +189,16 @@ public class UploaderRoute extends RouteBuilder {
 
 	private static byte[] hexToBytes(String hex){
 		if (hex == null || hex.isBlank()) return new byte[0];
-		int len = hex.length(); byte[] out = new byte[len/2];
-		for(int i=0;i<len;i+=2)
-			out[i/2]=(byte)((Character.digit(hex.charAt(i),16)<<4)+Character.digit(hex.charAt(i+1),16));
-		return out;
+		try {
+			int len = hex.length();
+			byte[] out = new byte[len / 2];
+			for (int i = 0; i < len; i += 2)
+				out[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4) + Character.digit(hex.charAt(i + 1), 16));
+			return out;
+		}catch(Exception e) {
+			System.out.println("BAD HEX: '"+hex+"'");
+			return null;
+		}
 	}
 
 	private static void scanJsonl(Path root, List<Path> out) throws IOException {

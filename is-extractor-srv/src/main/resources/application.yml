@@ -8,4 +8,12 @@ management:
 logging:
   level:
     root: INFO
-    org.apache.camel: INFO
+    org.apache.camel: ERROR
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      client-type: lettuce

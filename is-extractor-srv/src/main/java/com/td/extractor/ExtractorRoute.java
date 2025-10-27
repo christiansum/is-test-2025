@@ -47,7 +47,7 @@ public class ExtractorRoute extends RouteBuilder {
 							.toString();
 					e.getMessage().setBody(payload);
 				})
-				.toD("spring-redis://{{REDIS_HOST}}:{{REDIS_PORT}}?command=PUBLISH&channel={{REDIS_DLQ_CHANNEL}}")
+				.toD("spring-redis://?command=PUBLISH&channel={{REDIS_DLQ_CHANNEL}}")
 				.stop();
 
 		// EXTRACTORS=users,products (CSV Format)
@@ -60,6 +60,7 @@ public class ExtractorRoute extends RouteBuilder {
 	}
 
 	private void buildRouteFromEnv(String name) {
+		System.out.println("buildRouteFromEnv: " + name);
 		String KEY = name.toUpperCase().replaceAll("[^A-Z0-9]", "_");
 		String url  = must(KEY + "_URL");
 		String arr  = defaultValue(KEY + "_ARRAY_FIELD", "items"); // {users:[{},{}]}
@@ -90,9 +91,11 @@ public class ExtractorRoute extends RouteBuilder {
 				.process(e -> {
 					int s = (int) e.getProperty("skip");
 					e.getMessage().setHeader(Exchange.HTTP_QUERY, "limit=" + amountLimit + "&skip=" + s);
+					System.out.println(url);
 				})
 				.toD(url + "?throwExceptionOnFailure=true")
 				.process(e -> {
+					System.out.println("Extractor");
 					String body = e.getMessage().getBody(String.class);
 					ObjectMapper mapper = new ObjectMapper();
 					JsonNode root = mapper.readTree(body);
@@ -129,7 +132,7 @@ public class ExtractorRoute extends RouteBuilder {
 							.toString();
 					e.getMessage().setBody(payload);
 				})
-				.toD("spring-redis://{{REDIS_HOST}}:{{REDIS_PORT}}?command=PUBLISH&channel={{REDIS_CHANNEL}}")
+				.toD("spring-redis://?command=PUBLISH&channel={{REDIS_CHANNEL}}")
 				.log("Published: ${body}");
 	}
 

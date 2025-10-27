@@ -1,0 +1,84 @@
+version: "3.9"
+
+secrets:
+  sftp_key:
+    file: ./keys/id_rsa              #Don't commit this file
+  known_hosts:
+    file: ./keys/known_hosts         
+
+volumes:
+  sqlite_data: {}          # Dedicated for DB
+  suite_data: {}           # /data for RAW/PROCESSED/DLQ/STATE
+
+services:
+  
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}","--bind","0.0.0.0","--protected-mode","no"]
+    ports: ["6379:6379"]
+
+  sftp:
+    image: atmoz/sftp:latest
+    # usuario sin password; usará ONLY key auth (montamos la pública abajo)
+    command: "${SFTP_USER}::1001:1001:upload"
+    ports: ["2222:22"]
+    environment:
+      SFTP_LOG_LEVEL: INFO
+    volumes:
+      - ./upload:/home/${SFTP_USER}/upload
+      - ./keys/id_rsa.pub:/home/${SFTP_USER}/.ssh/keys/id_rsa.pub:ro
+
+  sqlite:
+    image: keinos/sqlite3:latest
+    command: >
+      sh -lc "
+        mkdir -p /var/sqlite &&
+        [ -f /var/sqlite/files.db ] || sqlite3 /var/sqlite/files.db < /docker-entrypoint-initdb.d/sqlite.sql ;
+        tail -f /dev/null
+      "
+    volumes:
+      - sqlite_data:/var/sqlite
+      - ./db/schema/sqlite.sql:/docker-entrypoint-initdb.d/sqlite.sql:ro
+
+  is-extractor-srv:
+    build:
+      context: ./is-extractor-srv
+      dockerfile: ../docker/Dockerfile.spring-camel-app
+    env_file: ./is-extractor-srv/.env
+    depends_on: [ redis ]
+    volumes:
+      - suite_data:/data
+    ports: ["8080:8080"]
+
+  is-processor-srv:
+    build:
+      context: ./is-processor-srv
+      dockerfile: ../docker/Dockerfile.spring-camel-app
+    env_file: ./is-processor-srv/.env
+    depends_on: [ redis ]
+    volumes:
+      - suite_data:/data
+      - ./departments.csv:/data/departments.csv:ro
+    ports: ["8081:8080"]
+
+  is-uploader-srv:
+    build:
+      context: ./is-uploader-srv
+      dockerfile: ../docker/Dockerfile.spring-camel-app
+    env_file: ./is-uploader-srv/.env
+    depends_on: [ redis, sftp, sqlite ]
+    volumes:
+      - suite_data:/data         # read files generated
+      - sqlite_data:/var/sqlite  # access to DB file
+    secrets:
+      - source: sftp_key
+        target: sftp_key       
+        mode: 0400
+      - source: known_hosts
+        target: known_hosts    
+        mode: 0444
+    environment:
+      SFTP_STRICT_HOST_KEY_CHECKING: "true"
+      SFTP_KNOWN_HOSTS: /run/secrets/known_hosts
+      SFTP_KEY_PATH: /run/secrets/sftp_key
+    ports: ["8082:8080"]
